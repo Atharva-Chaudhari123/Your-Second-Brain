@@ -93,3 +93,39 @@ NOTE:
   // Clean up: "Coding, React, Js" -> ["coding", "react", "js"]
   return text.split(',').map(tag => tag.trim().toLowerCase());
 }
+
+// NEW: Function to describe an image
+export async function describeImage(imageBase64: string, mimeType: string) {
+  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  
+  const prompt = "Describe this image under 30 words. If there is text, transcribe it exactly. If it's a chart, explain the data.";
+  
+  const result = await model.generateContent([
+    prompt,
+    { inlineData: { data: imageBase64, mimeType } }
+  ]);
+  
+  return result.response.text();
+}
+
+export async function analyzeFile(fileBase64: string, mimeType: string) {
+  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  
+  let prompt = "Analyze this file content.";
+  if (mimeType.startsWith("image/")) {
+    prompt = "Describe this image in detail. Transcribe any text you see exactly.";
+  } else if (mimeType === "application/pdf") {
+    prompt = "Read this PDF document. Summarize the key information, main topics, and any important data points.";
+  }
+
+  try {
+    const result = await model.generateContent([
+      prompt,
+      { inlineData: { data: fileBase64, mimeType } }
+    ]);
+    return result.response.text();
+  } catch (error) {
+    console.error("Gemini File Analysis Error:", error);
+    return ""; // Return empty string on failure instead of crashing
+  }
+}
