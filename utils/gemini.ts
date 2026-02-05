@@ -2,114 +2,42 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
+const textModelName = "gemini-3-flash-preview";
+const embeddingModelName = "text-embedding-004";
+
+// 1. Generate Embeddings (Vector)
 export async function generateEmbedding(text: string) {
-  const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
-  
+  const model = genAI.getGenerativeModel({ model: embeddingModelName });
   const result = await model.embedContent(text);
-  const embedding = result.embedding;
-  
-  return embedding.values; // Returns the array of numbers [0.12, -0.34, ...]
-}
-// 2. NEW: Text Generation Function (The "Chat" part)
-export async function generateAnswer(prompt: string) {
-
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-  
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  return response.text();
+  return result.embedding.values;
 }
 
-
-// NEW: Tag Generation
+// 2. Generate Tags (Classification)
 export async function generateTags(content: string, existingTags: string[]): Promise<string[]> {
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({ model: textModelName });
   
   const prompt = `
-You are a semantic tagging engine for a Second Brain knowledge system.
-
-Your job is to analyze the note and assign 1–5 highly relevant semantic tags that maximize future retrieval accuracy.
-
-STRICT OUTPUT RULES:
-- Return ONLY a comma-separated list
-- No explanations
-- No extra text
-- No quotes
-- No numbering
-- No hashtags
-- No punctuation except hyphen for kebab-case
-- Each tag must be ONE WORD ONLY (single token or kebab-case)
-- Tags must be lowercase
-- No duplicate tags
-- No generic tags like: note, text, info, idea, content
-
-TAG SELECTION RULES:
-1. EXISTING TAGS (highest priority): [${existingTags.join(', ')}]
-2. Strongly prefer choosing from the existing tag list when relevant
-3. Only create a new tag if NONE of the existing tags match the concept
-4. Never create a synonym if an equivalent existing tag already exists
-5. Choose tags based on MEANING — not exact wording
-6. Tags should represent:
-   - main topic
-   - domain
-   - method or concept
-   - intent or use-case when clear
-
-SEMANTIC RULES:
-- Extract the core subject matter
-- Infer obvious context when confidence is high
-- Avoid overly broad tags if a specific one exists
-- Avoid overly niche tags if a broader known tag exists in the list
-- Prefer stable vocabulary over trendy wording
-- Convert multi-word concepts into kebab-case
-
-GOOD TAG EXAMPLES:
-machine-learning
-productivity
-javascript
-memory
-planning
-api
-debugging
-
-BAD TAG EXAMPLES:
-how-to-study
-very-important
-random-thought
-my-note
-things
-
-Analyze this note now.
-
-NOTE:
-"""${content}"""
-`;
-
+    Analyze the note below and assign 3-5 tags.
+    RULES:
+    1. Prefer existing tags: [${existingTags.join(', ')}]
+    2. Tags should be lowercase, single words (or kebab-case).
+    3. Return ONLY a comma-separated list.
+    
+    NOTE: "${content.substring(0, 1000)}"
+  `;
   
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  const text = response.text();
-  
-  // Clean up: "Coding, React, Js" -> ["coding", "react", "js"]
-  return text.split(',').map(tag => tag.trim().toLowerCase());
+  try {
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    return text.split(',').map(tag => tag.trim().toLowerCase());
+  } catch (e) {
+    return [];
+  }
 }
 
-// NEW: Function to describe an image
-export async function describeImage(imageBase64: string, mimeType: string) {
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-  
-  const prompt = "Describe this image under 30 words. If there is text, transcribe it exactly. If it's a chart, explain the data.";
-  
-  const result = await model.generateContent([
-    prompt,
-    { inlineData: { data: imageBase64, mimeType } }
-  ]);
-  
-  return result.response.text();
-}
-
+// 3. Analyze File (Vision/PDF)
 export async function analyzeFile(fileBase64: string, mimeType: string) {
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({ model: textModelName });
   
   let prompt = "Analyze this file content.";
   if (mimeType.startsWith("image/")) {
@@ -126,6 +54,62 @@ export async function analyzeFile(fileBase64: string, mimeType: string) {
     return result.response.text();
   } catch (error) {
     console.error("Gemini File Analysis Error:", error);
-    return ""; // Return empty string on failure instead of crashing
+    return "";
+  }
+}
+
+// 4. Generate Summary (For Fact Store Files/Links & Knowledge Pages)
+export async function generateSummary(content: string) {
+  const model = genAI.getGenerativeModel({ model: textModelName });
+  const prompt = `
+    Summarize the following content into a concise paragraph (max 200 words) that captures the core facts and insights.
+    CONTENT: "${content.substring(0, 8000)}"
+  `;
+  
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (e) {
+    return content.substring(0, 200); // Fallback
+  }
+}
+
+// 5. Generate Flashcards (For Flashcard Page)
+export async function generateFlashcards(content: string) {
+  const model = genAI.getGenerativeModel({ 
+    model: textModelName,
+    generationConfig: { responseMimeType: "application/json" } // Force JSON output
+  });
+
+  const prompt = `
+    You are a professional tutor. Analyze the provided content and extract 3-5 high-quality flashcards for Spaced Repetition.
+
+    Rules:
+    1. If content is too short/irrelevant, return empty array.
+    2. Output MUST be a JSON array of objects with keys: "front" and "back".
+    
+    CONTENT:
+    ${content.substring(0, 10000)}
+  `;
+
+  try {
+    const result = await model.generateContent(prompt);
+    return JSON.parse(result.response.text());
+  } catch (error) {
+    console.error("Flashcard Gen Error:", error);
+    return [];
+  }
+}
+
+// 6. Generate Chat Answer (For Chat Interface)
+export async function generateAnswer(prompt: string) {
+  const model = genAI.getGenerativeModel({ model: textModelName });
+  
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (error) {
+    console.error("Chat Gen Error:", error);
+    return "I couldn't process that request right now.";
   }
 }

@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { generateEmbedding, generateTags, analyzeFile } from '@/utils/gemini'
+import { generateEmbedding, generateTags, analyzeFile, generateSummary } from '@/utils/gemini'
 import { scrapeUrl } from '@/utils/scraper'
 
-// This route runs in the background
 export async function POST(request: Request) {
   try {
     const { noteId } = await request.json()
@@ -11,83 +10,84 @@ export async function POST(request: Request) {
 
     const supabase = await createClient()
 
-    // 1. Fetch the "Raw" Note from DB
-    const { data: note } = await supabase
-      .from('notes')
-      .select('*')
-      .eq('id', noteId)
-      .single()
-
+    // 1. Fetch Note
+    const { data: note } = await supabase.from('notes').select('*').eq('id', noteId).single()
     if (!note) return NextResponse.json({ error: 'Note not found' }, { status: 404 })
 
-    console.log(`🚀 Background Processing Started for Note ${noteId}`)
+    console.log(`🚀 Processing Note ${noteId} [Category: ${note.category}]`)
 
-    // 2. Prepare Context (Text + File + Link)
-    let fullContext = note.content || "";
+    // 2. Prepare Context (Read Files/Links)
+    let rawContent = note.content || "";
+    let extractedFileText = "";
     let linkMeta = null;
 
-    // A. Process File (Download from Supabase Storage -> Send to Gemini)
+    // A. Handle Files (Read content if possible)
     if (note.file_path && note.file_type) {
       try {
-        console.log("   - Downloading file for analysis...")
-        // Fetch the file from the public URL
         const fileRes = await fetch(note.file_path);
         const arrayBuffer = await fileRes.arrayBuffer();
         const base64 = Buffer.from(arrayBuffer).toString('base64');
         
-        const analysis = await analyzeFile(base64, note.file_type);
-        fullContext += `\n\n[File Analysis]: ${analysis}`;
+        // Use AI to extract/describe file content
+        extractedFileText = await analyzeFile(base64, note.file_type);
       } catch (err) {
-        console.error("   - File analysis failed:", err)
+        console.error("File processing failed:", err)
       }
     }
 
-    // B. Process Link (Scrape URL)
+    // B. Handle Links (Scrape)
     const urlMatch = note.content.match(/(https?:\/\/[^\s]+)/);
     if (urlMatch) {
       try {
-        console.log("   - Scraping link...")
         linkMeta = await scrapeUrl(urlMatch[0]);
-        if (linkMeta?.title) {
-          fullContext += `\n\n[Link Context]: ${linkMeta.title} - ${linkMeta.description}`;
-        }
       } catch (err) {
-        console.error("   - Scraping failed:", err)
+        console.error("Scraping failed:", err)
       }
     }
 
-    // 3. Generate AI Metadata (Tags + Embeddings)
-    // We fetch existing tags to maintain consistency
+    // Combine for Tagging Context
+    const fullContextForTagging = `${rawContent}\n${extractedFileText}\n${linkMeta?.title || ''} ${linkMeta?.description || ''}`;
+
+    // 3. AI TAGGING (For ALL notes: Temp & Fact)
     const { data: userNotes } = await supabase.from('notes').select('tags').eq('user_id', note.user_id);
     const existingTags = Array.from(new Set(userNotes?.flatMap(n => n.tags || []) || [])).slice(0, 50) as string[];
+    
+    const newTags = await generateTags(fullContextForTagging, existingTags);
+    const finalTags = Array.from(new Set([...(note.tags || []), ...newTags]));
 
-    console.log("   - Generating AI Metadata...")
-    const [embedding, aiTags] = await Promise.all([
-      generateEmbedding(fullContext),
-      generateTags(fullContext, existingTags)
-    ]);
+    // 4. EMBEDDING & SUMMARY LOGIC (Strict Separation)
+    let embedding = null;
+    let aiSummary = null;
 
-    // 4. Update the Note in DB
-    // Merge manual tags (if any were saved initially) with AI tags
-    console.log(aiTags) ;
-    const currentTags = note.tags || [];
-    const finalTags = Array.from(new Set([...currentTags, ...aiTags]));
+    if (note.category === 'fact') {
+      // Only Facts get embeddings
+      
+      const hasRichContent = extractedFileText.length > 0 || (linkMeta !== null);
+      
+      if (hasRichContent) {
+        // CASE: Fact with File/Link -> Summarize THEN Embed
+        console.log("   - Fact has rich content: Generating Summary...");
+        aiSummary = await generateSummary(fullContextForTagging);
+        embedding = await generateEmbedding(aiSummary); // Embed the summary
+      } else {
+        // CASE: Fact Text Only -> Embed Raw Content
+        console.log("   - Fact is text only: Embedding Raw Content...");
+        // Ensure we don't exceed token limits for embedding models
+        embedding = await generateEmbedding(rawContent.substring(0, 8000));
+      }
+    } else {
+      console.log("   - Temporary Note: Skipping Embedding & Summary.");
+    }
 
-    const { error
-        
-    } = await supabase
-      .from('notes')
-      .update({
-        embedding,
-        tags: finalTags,
-        link_meta: linkMeta,
-        // We could add a 'status' column here if you wanted to track 'processing' vs 'done'
-      })
-      .eq('id', noteId);
+    // 5. Update DB
+    await supabase.from('notes').update({
+      tags: finalTags,
+      link_meta: linkMeta,
+      ai_summary: aiSummary,
+      embedding: embedding
+    }).eq('id', noteId);
 
-    if (error) throw error;
-
-    console.log(`✅ Note ${noteId} Enriched Successfully!`)
+    console.log(`✅ Note ${noteId} Processed. Tags: [${finalTags.length}]`)
     return NextResponse.json({ success: true })
 
   } catch (error) {
