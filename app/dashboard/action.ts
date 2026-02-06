@@ -2,7 +2,7 @@
 
 import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { generateEmbedding, generateAnswer } from '@/utils/gemini'
+import { generateEmbedding, generateChatResponse } from '@/utils/gemini'
 
 export async function deleteNote(noteId: number) {
   const supabase = await createClient()
@@ -64,39 +64,56 @@ export async function searchBrain(query: string) {
   }
 }
 
-export async function askBrain(question: string) {
+export async function askBrain(question: string, history: { role: string, content: string }[] = []) {
   const supabase = await createClient()
   
-  // 1. Get embedding for the question
+  // 1. RAG: Find relevant context
   const embedding = await generateEmbedding(question);
   
-  // 2. Find relevant notes (Using existing match_notes for now)
-  const { data: notes } = await supabase.rpc('match_notes', {
+  const { data: notes } = await supabase.rpc('search_brain', {
     query_embedding: embedding,
+    query_text: question,
     match_threshold: 0.45,
     match_count: 5
   });
 
-  // 3. Build Context
   const contextText = notes?.map((note: any) => {
-    return `Content: ${note.content}\nTags: [${note.tags?.join(', ')}]`
-  }).join("\n---\n") || "No relevant notes found.";
+    return `[${note.source_type.toUpperCase()}] ${note.title}: ${note.content_snippet}`
+  }).join("\n") || "No relevant notes found.";
 
-  // 4. Create Prompt
-  const prompt = `
-    You are a Second Brain assistant. Answer the user's question using ONLY the context provided below.
-    If the answer is not in the context, say "I don't have that information in my memory."
-    Do not make things up.
+  const historyText = history.slice(-5).map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join("\n");
 
-    USER QUESTION: 
-    ${question}
+  // 2. AI: Generate Response & Action
+  const aiResponse = await generateChatResponse(historyText, contextText, question);
 
-    YOUR KNOWLEDGE BASE (CONTEXT):
-    ${contextText}
-  `;
+  let savedNoteId: number | null = null;
 
-  // 5. Generate Answer
-  const answer = await generateAnswer(prompt);
+  // 3. Action: Save Note
+  if (aiResponse.action === 'save' && aiResponse.content) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      // Insert raw note first
+      const { data: note, error } = await supabase.from('notes').insert({
+        user_id: user.id,
+        content: aiResponse.content,
+        category: aiResponse.category || 'fact', 
+        // We leave tags/embeddings empty for now, the client will trigger the enrichment
+      })
+      .select()
+      .single()
+      
+      if (error) {
+        console.error("Failed to auto-save note:", error)
+      } else {
+        savedNoteId = note.id; // Capture ID to return to client
+        revalidatePath('/dashboard')
+      }
+    }
+  }
 
-  return answer;
+  // Return rich response
+  return { 
+    reply: aiResponse.reply, 
+    savedNoteId 
+  };
 }

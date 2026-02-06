@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
     console.log(`🚀 Processing Note ${noteId} [Category: ${note.category}]`)
 
-    // 2. Prepare Context (Read Files/Links)
+    // 2. Prepare Context (Text + File + Link)
     let rawContent = note.content || "";
     let extractedFileText = "";
     let linkMeta = null;
@@ -45,38 +45,33 @@ export async function POST(request: Request) {
       }
     }
 
-    // Combine for Tagging Context
-    const fullContextForTagging = `${rawContent}\n${extractedFileText}\n${linkMeta?.title || ''} ${linkMeta?.description || ''}`;
+    // Combine for Tagging/Embedding Context
+    const fullContext = `${rawContent}\n${extractedFileText}\n${linkMeta?.title || ''} ${linkMeta?.description || ''}`;
 
-    // 3. AI TAGGING (For ALL notes: Temp & Fact)
+    // 3. AI TAGGING (For ALL notes)
     const { data: userNotes } = await supabase.from('notes').select('tags').eq('user_id', note.user_id);
     const existingTags = Array.from(new Set(userNotes?.flatMap(n => n.tags || []) || [])).slice(0, 50) as string[];
     
-    const newTags = await generateTags(fullContextForTagging, existingTags);
+    const newTags = await generateTags(fullContext, existingTags);
     const finalTags = Array.from(new Set([...(note.tags || []), ...newTags]));
 
-    // 4. EMBEDDING & SUMMARY LOGIC (Strict Separation)
+    // 4. EMBEDDING & SUMMARY LOGIC
+    // UPDATE: We now generate embeddings for EVERYTHING (Temp & Fact) so Chat works better.
     let embedding = null;
     let aiSummary = null;
 
-    if (note.category === 'fact') {
-      // Only Facts get embeddings
-      
-      const hasRichContent = extractedFileText.length > 0 || (linkMeta !== null);
-      
-      if (hasRichContent) {
-        // CASE: Fact with File/Link -> Summarize THEN Embed
-        console.log("   - Fact has rich content: Generating Summary...");
-        aiSummary = await generateSummary(fullContextForTagging);
-        embedding = await generateEmbedding(aiSummary); // Embed the summary
-      } else {
-        // CASE: Fact Text Only -> Embed Raw Content
-        console.log("   - Fact is text only: Embedding Raw Content...");
-        // Ensure we don't exceed token limits for embedding models
-        embedding = await generateEmbedding(rawContent.substring(0, 8000));
-      }
+    const hasRichContent = extractedFileText.length > 0 || (linkMeta !== null);
+
+    if (hasRichContent) {
+        // Complex content (File/Link) -> Summarize FIRST, then Embed Summary
+        console.log("   - Rich content detected: Generating Summary...");
+        aiSummary = await generateSummary(fullContext);
+        embedding = await generateEmbedding(aiSummary); 
     } else {
-      console.log("   - Temporary Note: Skipping Embedding & Summary.");
+        // Simple Text (Fact or Temp) -> Embed Raw Content
+        // This ensures "Call Mom" or "I am an intern" is searchable
+        console.log("   - Simple text: Embedding Raw Content...");
+        embedding = await generateEmbedding(rawContent.substring(0, 8000));
     }
 
     // 5. Update DB
@@ -84,7 +79,7 @@ export async function POST(request: Request) {
       tags: finalTags,
       link_meta: linkMeta,
       ai_summary: aiSummary,
-      embedding: embedding
+      embedding: embedding // Now populated for ALL notes
     }).eq('id', noteId);
 
     console.log(`✅ Note ${noteId} Processed. Tags: [${finalTags.length}]`)

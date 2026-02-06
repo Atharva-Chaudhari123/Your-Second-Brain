@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
 const textModelName = "gemini-3-flash-preview";
-const embeddingModelName = "text-embedding-004";
+const embeddingModelName = "gemini-embedding-001";
 
 // 1. Generate Embeddings (Vector)
 export async function generateEmbedding(text: string) {
@@ -101,15 +101,63 @@ export async function generateFlashcards(content: string) {
   }
 }
 
-// 6. Generate Chat Answer (For Chat Interface)
+// 6. Generate Chat Answer (Legacy - keeping for fallback)
 export async function generateAnswer(prompt: string) {
   const model = genAI.getGenerativeModel({ model: textModelName });
-  
   try {
     const result = await model.generateContent(prompt);
     return result.response.text();
   } catch (error) {
-    console.error("Chat Gen Error:", error);
     return "I couldn't process that request right now.";
+  }
+}
+
+// 7. NEW: Smart Chat Agent (Session Aware + Actions)
+export async function generateChatResponse(history: string, context: string, question: string) {
+  const model = genAI.getGenerativeModel({ 
+    model: textModelName,
+    generationConfig: { responseMimeType: "application/json" } // Force JSON for structured actions
+  });
+
+  const prompt = `
+    You are the user's "Second Brain" assistant.
+    
+    GOAL:
+    Answer the user's question or perform an action (like saving a note) based on the conversation history and context provided.
+
+    CONTEXT FROM DATABASE (RAG):
+    ${context}
+
+    CONVERSATION HISTORY:
+    ${history}
+
+    CURRENT USER INPUT:
+    "${question}"
+
+    INSTRUCTIONS:
+    1. If the user explicitly asks to SAVE, REMEMBER, or ADD a note, or if the input is clearly a task/fact they want to store:
+       - Set "action" to "save".
+       - Determine "category": "temporary" (for tasks, reminders, grocery lists) or "fact" (for knowledge, ideas, links).
+       - Extract the "content" cleanly.
+       - Provide a "reply" confirming the action.
+    2. Otherwise, just chat:
+       - Set "action" to "chat".
+       - Provide a helpful "reply" based on the Context and History.
+    
+    OUTPUT FORMAT (JSON):
+    {
+      "action": "chat" | "save",
+      "category": "temporary" | "fact" | null,
+      "content": "extracted content to save" | null,
+      "reply": "your response to the user"
+    }
+  `;
+
+  try {
+    const result = await model.generateContent(prompt);
+    return JSON.parse(result.response.text());
+  } catch (error) {
+    console.error("Chat Agent Error:", error);
+    return { action: "chat", reply: "I'm having trouble processing that right now." };
   }
 }
