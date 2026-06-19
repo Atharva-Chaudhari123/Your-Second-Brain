@@ -5,6 +5,10 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 
 export async function login(formData: FormData) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
+    redirect('/login?error=Vercel environment variables are missing. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your Vercel Project Settings, then redeploy.')
+  }
+
   const supabase = await createClient()
 
   // Type-safe data extraction
@@ -25,6 +29,10 @@ export async function login(formData: FormData) {
 }
 
 export async function signup(formData: FormData) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
+    redirect('/login?error=Vercel environment variables are missing. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your Vercel Project Settings, then redeploy.')
+  }
+
   const supabase = await createClient()
 
   const data = {
