@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "placeholder-api-key");
 
 const textModelName = "gemini-3-flash-preview";
 const embeddingModelName = "gemini-embedding-001";
