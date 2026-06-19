@@ -16,8 +16,8 @@ export async function GET(request: Request) {
     const { data, error } = await supabase.rpc('search_brain', {
       query_embedding: embedding,
       query_text: query,
-      match_threshold: 0.45,
-      match_count: 8
+      match_threshold: 0.55,
+      match_count: 4
     })
 
     if (error) throw error

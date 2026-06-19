@@ -1,8 +1,8 @@
 import { createClient } from '@/utils/supabase/server'
 import { deleteNote } from '@/app/dashboard/action'
-import SmartInput from '@/components/dashboard/smart-input'
+import CreateNoteButton from '@/components/dashboard/create-note-button'
 
-// --- Types (Ideally move these to a @/types/index.ts file later) ---
+// --- Types ---
 interface LinkMetadata {
   url: string;
   title: string | null;
@@ -42,35 +42,34 @@ export default async function TemporaryStorePage() {
   }
 
   return (
-    <main className="w-full max-w-4xl mx-auto space-y-8 pb-20 px-4 md:px-0">
+    <main className="w-full max-w-5xl mx-auto space-y-8 pb-20 px-4 md:px-0">
       
       {/* 1. Header */}
-      <div className="pt-6 border-b border-gray-100 pb-6">
-        <h1 className="text-3xl font-bold text-orange-900 tracking-tight flex items-center gap-2">
-          <span>⏳</span> Temporary Store
-        </h1>
-        <p className="text-orange-700/60 mt-1">
-          Ephemeral thoughts and tasks. Items here auto-delete after their expiry date.
-        </p>
+      <div className="pt-6 border-b border-gray-100 pb-6 flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold text-orange-900 tracking-tight flex items-center gap-2">
+            <span>⏳</span> Temporary Store
+          </h1>
+          <p className="text-orange-700/60 mt-1">
+            Ephemeral thoughts and tasks. Items here auto-delete after their expiry date.
+          </p>
+        </div>
+        
+        {/* 2. Action Button (Replaces Smart Input) */}
+        <CreateNoteButton category="temporary" />
       </div>
 
-      {/* 2. Input Area (Reusing Smart Input) */}
-      <section>
-        <SmartInput /> 
-        {/* Note: SmartInput defaults to 'Temporary' category, which fits perfectly here */}
-      </section>
-
-      {/* 3. The Temporary Feed */}
+      {/* 3. The Temporary Feed (Masonry Layout) */}
       <section className="space-y-4">
         <h2 className="text-xl font-bold text-gray-800">Active Tasks</h2>
         
-        <div className="grid grid-cols-1 gap-4">
+        <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
           {notes?.map((note) => {
              const daysLeft = note.expires_at ? getDaysLeft(note.expires_at) : 30;
              const isUrgent = daysLeft <= 3;
 
              return (
-               <div key={note.id} className={`group relative bg-white rounded-xl border shadow-sm transition-all overflow-hidden
+               <div key={note.id} className={`break-inside-avoid mb-4 group relative bg-white rounded-xl border shadow-sm transition-all overflow-hidden
                  ${isUrgent ? 'border-orange-200 shadow-orange-50' : 'border-gray-200 hover:shadow-md'}
                `}>
                   
@@ -126,7 +125,7 @@ export default async function TemporaryStorePage() {
           })}
 
           {(!notes || notes.length === 0) && (
-             <div className="py-20 text-center border-2 border-dashed border-gray-200 rounded-xl">
+             <div className="col-span-full py-20 text-center border-2 border-dashed border-gray-200 rounded-xl">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-orange-50 mb-4">
                   <span className="text-2xl">🧹</span>
                 </div>

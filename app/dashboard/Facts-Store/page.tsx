@@ -1,7 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { deleteNote } from '@/app/dashboard/action'
 import SearchBar from '@/components/search-bar'
-import Link from 'next/link'
+import CreateNoteButton from '@/components/dashboard/create-note-button'
 
 // --- Types ---
 interface LinkMetadata {
@@ -55,7 +55,7 @@ export default async function FactsStorePage({ searchParams }: { searchParams: P
   return (
     <main className="w-full max-w-6xl mx-auto space-y-8 pb-20 px-4 md:px-0">
       
-      {/* 1. Header */}
+      {/* 1. Header & Actions */}
       <div className="pt-6 border-b border-gray-100 pb-6 flex flex-col md:flex-row justify-between items-end gap-4">
         <div>
           <h1 className="text-3xl font-bold text-blue-900 tracking-tight flex items-center gap-2">
@@ -65,12 +65,17 @@ export default async function FactsStorePage({ searchParams }: { searchParams: P
             Permanent knowledge, references, and resources. Indexed for long-term recall.
           </p>
         </div>
-        <div className="w-full md:w-96">
-          <SearchBar />
+        
+        <div className="flex flex-col md:flex-row items-end gap-4 w-full md:w-auto">
+          <div className="w-full md:w-64">
+            <SearchBar />
+          </div>
+          {/* Action Button: Specifically for Facts */}
+          <CreateNoteButton category="fact" />
         </div>
       </div>
 
-      {/* 2. Facts Grid */}
+      {/* 2. Facts Grid (Masonry Layout) */}
       <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
         {notes?.map((note) => {
              // Logic to clean up display text
@@ -81,7 +86,7 @@ export default async function FactsStorePage({ searchParams }: { searchParams: P
              const hasRichData = note.link_meta?.title && note.link_meta?.image;
 
              return (
-               <div key={note.id} className="break-inside-avoid group relative bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all flex flex-col overflow-hidden mb-4">
+               <div key={note.id} className="break-inside-avoid mb-4 group relative bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all flex flex-col overflow-hidden">
                   
                   {/* DELETE ACTION */}
                   <form action={deleteNote.bind(null, note.id)} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
@@ -112,7 +117,7 @@ export default async function FactsStorePage({ searchParams }: { searchParams: P
                           <div className="overflow-hidden">
                             <p className="text-sm font-bold text-blue-900 truncate">PDF Document</p>
                             {/* If AI summarized it, show snippet */}
-                            <p className="text-[10px] text-blue-600 truncate">{note.ai_summary ? "AI Summarized" : "Click to Preview"}</p>
+                            <p className="text-[10px] text-blue-600 truncate uppercase font-semibold">{note.ai_summary ? "AI Summarized" : "Click to Preview"}</p>
                           </div>
                       </a>
                     )}
@@ -170,7 +175,6 @@ export default async function FactsStorePage({ searchParams }: { searchParams: P
              </div>
           )}
         </div>
-      
     </main>
   )
 }

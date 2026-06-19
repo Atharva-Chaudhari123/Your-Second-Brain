@@ -29,8 +29,8 @@ export async function searchNotes(query: string) {
   // 2. Search via RPC
   const { data: notes, error } = await supabase.rpc('match_notes', {
     query_embedding: embedding,
-    match_threshold: 0.45, // Sensitivity threshold
-    match_count: 5
+    match_threshold: 0.6, // Sensitivity threshold
+    match_count: 3
   });
 
   if (error) {
@@ -51,8 +51,8 @@ export async function searchBrain(query: string) {
     const { data, error } = await supabase.rpc('search_brain', {
       query_embedding: embedding,
       query_text: query,
-      match_threshold: 0.5,
-      match_count: 10
+      match_threshold: 0.6,
+      match_count: 3
     })
 
     if (error) throw error
@@ -73,7 +73,7 @@ export async function askBrain(question: string, history: { role: string, conten
   const { data: notes } = await supabase.rpc('search_brain', {
     query_embedding: embedding,
     query_text: question,
-    match_threshold: 0.45,
+    match_threshold: 0.6,
     match_count: 5
   });
 
