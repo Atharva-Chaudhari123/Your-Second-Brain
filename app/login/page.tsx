@@ -12,14 +12,22 @@ export default async function LoginPage({
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50">
       <form className="flex w-full max-w-md flex-col gap-4 p-8 bg-white rounded shadow-md">
-        <h1 className="text-2xl font-bold">Second Brain Login</h1>
+        <h1 className="text-2xl font-bold text-center">Second Brain Login</h1>
         
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-3 rounded-lg leading-relaxed">
+          <p className="font-semibold mb-1">Demo Access Credentials:</p>
+          <p>Email: <code className="bg-blue-100 px-1 py-0.5 rounded font-mono">atharva@gmail.com</code></p>
+          <p>Password: <code className="bg-blue-100 px-1 py-0.5 rounded font-mono">pass@321</code></p>
+          <p className="mt-2 text-gray-500 italic">Please make sure to add this user once in your Supabase Auth dashboard if not already created.</p>
+        </div>
+
         <label className="text-sm font-medium" htmlFor="email">Email</label>
         <input 
           id="email" 
           name="email" 
           type="email" 
           required 
+          defaultValue="atharva@gmail.com"
           className="border p-2 rounded" 
           placeholder="you@example.com"
         />
@@ -30,6 +38,7 @@ export default async function LoginPage({
           name="password" 
           type="password" 
           required 
+          defaultValue="pass@321"
           // Supabase requires min 6 chars by default
           minLength={6}
           className="border p-2 rounded" 
